@@ -4,8 +4,6 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from io import BytesIO
 from PIL import Image
-import requests
-import threading
 
 # Enable logging
 logging.basicConfig(
@@ -22,7 +20,6 @@ if not TOKEN:
 # ============= COMMAND HANDLERS =============
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Send a welcome message when /start is issued."""
     user = update.effective_user
     welcome_text = (
         f"🎨 **Welcome {user.first_name}!**\n\n"
@@ -37,16 +34,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• WebP\n"
         "• BMP\n"
         "• GIF\n\n"
-        "📦 **Extra features:**\n"
-        "• Compress images to save space\n"
-        "• Resize images\n"
-        "• Convert multiple images\n\n"
         "Just send me an image to get started! 🚀"
     )
     await update.message.reply_text(welcome_text, parse_mode="Markdown")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Send a help message when /help is issued."""
     help_text = (
         "📋 **How to use PicFormatBot**\n\n"
         "1️⃣ **Send an image** - Send any photo or image\n"
@@ -55,40 +47,31 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "⚙️ **Commands:**\n"
         "/start - Welcome message\n"
         "/help - This help message\n"
-        "/about - About this bot\n\n"
-        "💡 **Tips:**\n"
-        "• Send multiple images for batch conversion\n"
-        "• Use /compress to reduce file size\n"
-        "• Use /resize to change dimensions"
+        "/about - About this bot\n"
+        "/compress - Compress the last image\n"
+        "/resize WIDTH HEIGHT - Resize the last image"
     )
     await update.message.reply_text(help_text, parse_mode="Markdown")
 
 async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Send about info."""
     about_text = (
         "🖼️ **PicFormatBot v1.0**\n\n"
         "A powerful image format converter bot for Telegram.\n\n"
         "🔧 **Features:**\n"
         "• Convert between JPG, PNG, WebP, BMP, GIF\n"
         "• Image compression\n"
-        "• Batch conversion\n"
-        "• Fast and reliable\n\n"
+        "• Image resizing\n\n"
         "📝 **Tech Stack:**\n"
         "• Python 3.12\n"
         "• python-telegram-bot\n"
         "• Pillow (PIL)\n"
-        "• Deployed on Railway\n\n"
-        "👨‍💻 Built with ❤️ for the Telegram community"
+        "• Deployed on Railway"
     )
     await update.message.reply_text(about_text, parse_mode="Markdown")
 
 async def compress_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Compress the last image."""
     if 'last_image' not in context.user_data:
-        await update.message.reply_text(
-            "❌ No image found!\n\n"
-            "Please send me an image first, then use /compress."
-        )
+        await update.message.reply_text("❌ No image found! Please send me an image first.")
         return
     
     image_bytes = context.user_data['last_image']
@@ -118,28 +101,22 @@ async def compress_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"✅ **Compressed!**\n\n"
                 f"📊 Original: {original_size//1024}KB\n"
                 f"📊 Compressed: {compressed_size//1024}KB\n"
-                f"📉 Reduction: {reduction:.1f}%\n"
-                f"🔷 Format: {original_format}"
+                f"📉 Reduction: {reduction:.1f}%"
             )
         )
     except Exception as e:
-        await update.message.reply_text(f"❌ Error compressing image: {str(e)}")
+        await update.message.reply_text(f"❌ Error: {str(e)}")
 
 async def resize_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Resize the last image."""
     if 'last_image' not in context.user_data:
-        await update.message.reply_text(
-            "❌ No image found!\n\n"
-            "Please send me an image first, then use /resize."
-        )
+        await update.message.reply_text("❌ No image found! Please send me an image first.")
         return
     
     if not context.args or len(context.args) < 2:
         await update.message.reply_text(
             "📏 **Resize Tool**\n\n"
             "Usage: `/resize WIDTH HEIGHT`\n\n"
-            "Example: `/resize 800 600`\n\n"
-            "⚠️ The image will be resized to these exact dimensions."
+            "Example: `/resize 800 600`"
         )
         return
     
@@ -175,19 +152,14 @@ async def resize_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_document(
             document=output,
             filename=f"resized_{width}x{height}.{original_format.lower()}",
-            caption=(
-                f"✅ **Resized!**\n\n"
-                f"📐 New dimensions: {width}x{height}\n"
-                f"🔷 Format: {original_format}"
-            )
+            caption=f"✅ **Resized!**\n\n📐 New dimensions: {width}x{height}"
         )
     except Exception as e:
-        await update.message.reply_text(f"❌ Error resizing image: {str(e)}")
+        await update.message.reply_text(f"❌ Error: {str(e)}")
 
 # ============= IMAGE HANDLERS =============
 
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle image messages - show conversion options."""
     photo = update.message.photo[-1]
     file = await photo.get_file()
     
@@ -227,7 +199,6 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle document messages (images sent as files)."""
     document = update.message.document
     mime_type = document.mime_type or ''
     file_name = document.file_name or ''
@@ -263,15 +234,11 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
     else:
-        await update.message.reply_text(
-            f"⚠️ I can only process images.\n\n"
-            f"Please send me a JPG, PNG, GIF, WebP, or BMP file."
-        )
+        await update.message.reply_text("⚠️ I can only process images. Please send a JPG, PNG, GIF, WebP, or BMP file.")
 
 # ============= CALLBACK QUERY HANDLERS =============
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle button presses for image conversion."""
     query = update.callback_query
     await query.answer()
     
@@ -340,10 +307,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         output.seek(0)
         
-        await query.edit_message_text(
-            f"✅ **Converted to {format_name}!**\n\n"
-            f"📦 Sending your image..."
-        )
+        await query.edit_message_text(f"✅ **Converted to {format_name}!**\n\n📦 Sending your image...")
         
         await query.message.reply_document(
             document=output,
@@ -352,7 +316,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         
     except Exception as e:
-        await query.edit_message_text(f"❌ Error processing image: {str(e)}")
+        await query.edit_message_text(f"❌ Error: {str(e)}")
     
     user_data.pop('last_image', None)
 
@@ -379,38 +343,6 @@ def main():
     print("=" * 50)
     
     application.run_polling(allowed_updates=Update.ALL_TYPES)
-
-# ============= FLASK WRAPPER FOR GUNICORN =============
-
-# This allows Gunicorn to run the bot alongside a web server
-from flask import Flask, jsonify
-
-flask_app = Flask(__name__)
-
-@flask_app.route('/')
-def index():
-    return jsonify({
-        "status": "running",
-        "bot": "PicFormatBot",
-        "message": "Bot is active and running in polling mode"
-    })
-
-@flask_app.route('/health')
-def health():
-    return jsonify({"status": "healthy"})
-
-# Start the bot in a background thread when Gunicorn starts
-def run_bot_thread():
-    main()
-
-# Only start the bot thread if we're not running the standalone script
-# This prevents the bot from starting twice
-if not os.environ.get('WERKZEUG_RUN_MAIN'):
-    bot_thread = threading.Thread(target=run_bot_thread, daemon=True)
-    bot_thread.start()
-
-# Gunicorn looks for 'app' variable
-app = flask_app
 
 if __name__ == "__main__":
     main()
