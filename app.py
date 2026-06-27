@@ -5,6 +5,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from io import BytesIO
 from PIL import Image
 import requests
+import threading
 
 # Enable logging
 logging.basicConfig(
@@ -90,22 +91,18 @@ async def compress_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    # Get the last image
     image_bytes = context.user_data['last_image']
     image = Image.open(BytesIO(image_bytes))
     
     await update.message.reply_text("📦 Compressing image... Please wait ⏳")
     
     try:
-        # Compress the image
         output = BytesIO()
         original_format = image.format or 'JPEG'
         
         if original_format in ['PNG', 'GIF']:
-            # For PNG/GIF, save with optimization
             image.save(output, format=original_format, optimize=True)
         else:
-            # For JPG/others, reduce quality
             image.save(output, format='JPEG', quality=60, optimize=True)
         
         output.seek(0)
@@ -137,7 +134,6 @@ async def resize_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    # Check if dimensions provided
     if not context.args or len(context.args) < 2:
         await update.message.reply_text(
             "📏 **Resize Tool**\n\n"
@@ -170,7 +166,6 @@ async def resize_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"📐 Resizing to {width}x{height}... ⏳")
     
     try:
-        # Resize the image
         resized = image.resize((width, height), Image.Resampling.LANCZOS)
         
         output = BytesIO()
@@ -193,22 +188,17 @@ async def resize_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle image messages - show conversion options."""
-    photo = update.message.photo[-1]  # Get the largest photo
+    photo = update.message.photo[-1]
     file = await photo.get_file()
     
-    # Download the image
     image_bytes = await file.download_as_bytearray()
-    
-    # Store the image in user_data for later use
     context.user_data['last_image'] = image_bytes
     
-    # Get image info
     image = Image.open(BytesIO(image_bytes))
     width, height = image.size
-    file_size = len(image_bytes) // 1024  # KB
+    file_size = len(image_bytes) // 1024
     current_format = image.format or 'Unknown'
     
-    # Create inline keyboard with format options
     keyboard = [
         [
             InlineKeyboardButton("🔄 JPG", callback_data="convert_jpg"),
@@ -239,8 +229,6 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle document messages (images sent as files)."""
     document = update.message.document
-    
-    # Check if it's an image
     mime_type = document.mime_type or ''
     file_name = document.file_name or ''
     
@@ -249,7 +237,6 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         image_bytes = await file.download_as_bytearray()
         context.user_data['last_image'] = image_bytes
         
-        # Show the same conversion options
         keyboard = [
             [
                 InlineKeyboardButton("🔄 JPG", callback_data="convert_jpg"),
@@ -308,7 +295,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if action == "convert_jpg":
             format_name = "JPG"
-            # Convert to RGB if needed (JPG doesn't support alpha)
             if image.mode in ('RGBA', 'LA', 'P'):
                 background = Image.new('RGB', image.size, (255, 255, 255))
                 if image.mode == 'RGBA':
@@ -354,13 +340,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         output.seek(0)
         
-        # Update the message
         await query.edit_message_text(
             f"✅ **Converted to {format_name}!**\n\n"
             f"📦 Sending your image..."
         )
         
-        # Send the converted image
         await query.message.reply_document(
             document=output,
             filename=filename,
@@ -370,7 +354,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await query.edit_message_text(f"❌ Error processing image: {str(e)}")
     
-    # Clean up
     user_data.pop('last_image', None)
 
 # ============= MAIN APPLICATION =============
@@ -379,18 +362,15 @@ def main():
     """Start the bot."""
     application = Application.builder().token(TOKEN).build()
 
-    # Add command handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("about", about_command))
     application.add_handler(CommandHandler("compress", compress_command))
     application.add_handler(CommandHandler("resize", resize_command))
     
-    # Add message handlers
     application.add_handler(MessageHandler(filters.PHOTO, handle_image))
     application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     
-    # Add callback query handler for inline buttons
     application.add_handler(CallbackQueryHandler(button_callback))
 
     print("🖼️ PicFormatBot is starting...")
@@ -399,6 +379,38 @@ def main():
     print("=" * 50)
     
     application.run_polling(allowed_updates=Update.ALL_TYPES)
+
+# ============= FLASK WRAPPER FOR GUNICORN =============
+
+# This allows Gunicorn to run the bot alongside a web server
+from flask import Flask, jsonify
+
+flask_app = Flask(__name__)
+
+@flask_app.route('/')
+def index():
+    return jsonify({
+        "status": "running",
+        "bot": "PicFormatBot",
+        "message": "Bot is active and running in polling mode"
+    })
+
+@flask_app.route('/health')
+def health():
+    return jsonify({"status": "healthy"})
+
+# Start the bot in a background thread when Gunicorn starts
+def run_bot_thread():
+    main()
+
+# Only start the bot thread if we're not running the standalone script
+# This prevents the bot from starting twice
+if not os.environ.get('WERKZEUG_RUN_MAIN'):
+    bot_thread = threading.Thread(target=run_bot_thread, daemon=True)
+    bot_thread.start()
+
+# Gunicorn looks for 'app' variable
+app = flask_app
 
 if __name__ == "__main__":
     main()
